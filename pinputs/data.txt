@@ -1,0 +1,13 @@
+One of the most important components of online business is creating a trusted environment where potential customers feel confident in making purchases SSL certificates create a foundation of trust by establishing a secure connection To assure visitors their connection is secure browsers provide special visual cues that we call EV indicators anything from a green padlock to branded URL bar 
+
+SSL certificates have a key pair a public and a private key  These keys work together to establish an encrypted connection  The certificate also contains what is called the subject which is the identity of the certificate website owner 
+
+To get a certificate you must create a Certificate Signing Request    CSR   on your server  This process creates a private key and public key on your server  The CSR data file that you send to the SSL Certificate issuer    called a Certificate Authority or CA   contains the public key  The CA uses the CSR data file to create a data structure to match your private key without compromising the key itself  The CA never sees the private key 
+
+Once you receive the SSL certificate you install it on your server  You also install an intermediate certificate that establishes the credibility of your SSL Certificate by tying it to your CAs root certificate  The instructions for installing and testing your certificate will be different depending on your server 
+
+In the image below you can see what is called the certificate chain  It connects your server certificate to your CAs    in this case DigiCerts   root certificate through an intermediate certificate 
+
+The most important part of an SSL certificate is that it is digitally signed by a trusted CA like DigiCert  Anyone can create a certificate, but browsers only trust certificates that come from an organization on their list of trusted CAs  Browsers come with a pre installed list of trusted CAs known as the Trusted Root CA store  In order to be added to the Trusted Root CA store and thus become a Certificate Authority a company must comply with and be audited against security and authentication standards established by the browsers
+
+An SSL Certificate issued by a CA to an organization and its domain website verifies that a trusted third party has authenticated that organizations identity Since the browser trusts the CA the browser now trusts that organizations identity too The browser lets the user know that the website is secure and the user can feel safe browsing the site and even entering their confidential information
