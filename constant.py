@@ -1,7 +1,7 @@
 #File used to define all of the constants
 
 #Test Number
-TESTNUM = 1
+TESTNUM = 2
 
 #Input files
 CAFILE = [

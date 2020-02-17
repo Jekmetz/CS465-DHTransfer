@@ -3,6 +3,7 @@ import constant as CONST
 import os
 from os import path
 from Crypto.PublicKey import RSA
+from Crypto.Cipher import AES
 import hashlib
 import string
 import random
@@ -13,8 +14,10 @@ def main():
 	caID = 0;
 	serverID = 0;
 	serverPubKey = 0;
-	dhPrivKey = 0;
+	sdhPrivKey = "";
+	cdhPrivKey = "";
 	hashesMatch = True;
+	clientVerify = True;
 
 	#init random number generator
 	random.seed();
@@ -29,14 +32,28 @@ def main():
 
 	if(not hashesMatch):
 		print('The certificate is invalid. Connection terminated.');
+		logln('Client: The certificate is invalid. Connection terminated.');
+		return True;
 
 	#simulating connection to port 443
 	logln("Client: The connection is complete");
 
-	#diffie-helmans key that both the server and the client have. We will only use this instance.
-	dhPrivKey = handshake(serverID);
+	#diffie-helmans key that both the server and the client have.
+	#represented by cdhPrivKey and sdhPrivKey
+	(cdhPrivKey,sdhPrivKey) = handshake(serverID);
 
-	print("Success!");
+	#server data transfer
+	serverDataTransfer(sdhPrivKey, serverID);
+
+	clientVerify = clientDataTransfer(cdhPrivKey, serverID, serverPubKey);
+
+	if(clientVerify == True):
+		print("Success!");
+	else:
+		print("Failure during client data transfer! Aborting!")
+
+	#Close connection
+	logln("Client:The connection is closed.");
 	return True;
 	
 #Gets all of the information from the correct CA*.txt
@@ -49,7 +66,9 @@ def getCAInfo():
 	hashesMatch = True;
 	caPlainText = "";
 
-	caPlainText = rsaEncrypt(CONST.CAFILE[CONST.TESTNUM],CONST.CAPUBFILE);
+	with open(CONST.CAFILE[CONST.TESTNUM],'rb') as caF:
+		with open(CONST.CAPUBFILE,'rb') as caPubF:
+			caPlainText = rsaEncrypt(caF.read(),caPubF.read());
 
 	caPlainText = caPlainText.split('\n');
 
@@ -69,11 +88,12 @@ def getCAInfo():
 	logln("Client: hash provided = " + caPlainText[len(caPlainText) - 1]);
 	logln("Client: hash calculated = " + caHash);
 
-	return (caID, serverID, serverPubKey, caHash == caPlainText[len(caPlainText) - 1]);
+	return (caID, serverID, "-----\n" + serverPubKey + "\n-----", caHash == caPlainText[len(caPlainText) - 1]);
 
 #perform the handshake phase
 def handshake(serverID):
-	dhPrivKey = 0;
+	cdhPrivKey = 0;
+	sdhPrivKey = 0;
 	p = 0;	#mod p
 	g = 0;  #base g
 	a = random.randint(1,10**4);  #client private key
@@ -93,8 +113,6 @@ def handshake(serverID):
 
 	c_x = g**a % p;
 
-	logln("Client: Generated x - " + str(c_x));
-
 	#write client public key to file
 	with open(CONST.C2SFILE,'w') as f:
 		f.write(str(c_x));
@@ -104,7 +122,7 @@ def handshake(serverID):
 
 	s_y = g**b % p;
 
-	logln("Server: Generated y - " + str(s_y));
+	logln("Server Hello: {{{}}}:{{{}}}".format(serverID,s_y));
 
 	#write server public key to file
 	with open(CONST.S2CFILE,'w') as f:
@@ -115,9 +133,7 @@ def handshake(serverID):
 		s_x = int(f.read());
 
 	#use key to get dhPrivKey
-	dhPrivKey = s_x**b % p;
-
-	logln("Server: Generated secret key - " + str(dhPrivKey));
+	sdhPrivKey = s_x**b % p;
 
 	#########CLIENT CALCULATIONS###############
 
@@ -125,40 +141,118 @@ def handshake(serverID):
 	with open(CONST.S2CFILE,'rb') as f:
 		c_y = int(f.read());
 
-	dhPrivKey = c_y**a % p;
+	cdhPrivKey = c_y**a % p;
 
-	logln("Client: Generated secret key - " + str(dhPrivKey));
+	logln("Client: Key-handshake complete Client\nAll future messages will be sent with the generated secret key.");
+	logln("Client: Client ready to enter the Data Transfer phase.");
 
-	return dhPrivKey;
+	##########SERVER CALCULATIONS##############
+	logln("Server: Key-handshake complete Server\nAll future messages will be sent with the generated secret key.");
+	logln("Server: Server ready to enter the Data Transfer phase.");
 
-#Encrypt a given file (plainTextFileName) with a given RSA Public Key (pubRsaFileName)
-def rsaEncrypt(plainTextFileName,pubRsaFileName):
+	return str(cdhPrivKey)[0:32],str(sdhPrivKey)[0:32];
+
+def serverDataTransfer(sdhPrivKey, serverID):
+	data = "";
+	signature = "";
+	h = 0;
+
+	#get all of the digits and characters from the datfile!
+	with (open(CONST.DATFILE,'rb')) as f:
+		data = ''.join(filter(lambda c: c.isalpha() or c.isdigit(),f.read()));
+
+	#calculate sha256 hash and tack that on to the data at the end
+	h = hashlib.sha256(data).hexdigest();
+	data += '\n' + str(h);
+
+	#sign file with private key
+	with open(CONST.SPRIVFILE,'rb') as sPrivF:
+		signature = rsaDecrypt(serverID,sPrivF.read());
+
+	data += '\n' + signature;
+
+	cipher = AES.new(sdhPrivKey, AES.MODE_ECB);
+
+	#Add appropriate padding at the beginning
+	data = '\0'*(AES.block_size - (len(data) % AES.block_size)) + data;
+
+	data = cipher.encrypt(data);
+
+	logln("Server: The file has been encrypted.");
+
+	with open(CONST.SECRETFILE,'w') as f:
+		f.write(data);
+
+	return;
+
+def clientDataTransfer(cdhPrivKey, serverID, serverPubKey):
+	#Init Vars
+	data = "";
+	fServerID = "";
+	fdata = "";
+	fhash = "";
+
+
+	with open(CONST.SECRETFILE, 'rb') as f:
+		data = f.read();
+
+	#decrypt with AES
+	cipher = AES.new(cdhPrivKey, AES.MODE_ECB);
+	data = cipher.decrypt(data).split('\n');
+
+	#get all of the parts
+	#remove padding
+	fdata = ''.join(filter(lambda c: c in string.printable,data[0]));
+	fhash = data[1];
+	fServerID = data[2];
+
+	#verify that it came from the server by using the server RSA pubkey
+	#catch to make sure the RSA pubkey is correct
+	try:
+		fServerID = rsaEncrypt(fServerID,serverPubKey);
+	except Exception:
+		logln("Client: Bad RSA public key from initial file!");
+		return False;
+		
+	if(fServerID != serverID):
+		logln("Client: ServerID was not signed properly!");
+		return False;
+	#we know the file was signed correctly
+
+	#calculate the hash of the data
+	if (fhash != str(hashlib.sha256(fdata).hexdigest())):
+		logln("Client: The file has been tampered with");
+		return False;
+	
+	#we know the data was not tampered with
+	print("Data:\n" + fdata);
+	logln('Client:\nDATA:\n\n{}\n'.format(fdata));
+
+
+#Encrypt given data with a given RSA Public Key text
+def rsaEncrypt(plainText,pubRsa):
 	rsaKey = 0;
 	ciphertext = 0;
 	
-	#get RSA key from file
-	with open(pubRsaFileName,'rb') as f:
-		rsaKey = RSA.importKey(f.read());
+	#get RSA key 
+	rsaKey = RSA.importKey(pubRsa);
 
 	#generate ciphertext
-	with open(plainTextFileName,'rb') as f:
-		ciphertext = rsaKey.encrypt(f.read(),0);
+	ciphertext = rsaKey.encrypt(plainText,0);
 
 	#return ciphertext
 	return ciphertext[0];
 
-#Decrypt a given file (ciphertextFileName) with a given RSA private key privRsaFileeName
-def rsaDecrypt(ciphertextFileName, privRsaFileName):
+#Decrypt given data with a given RSA text
+def rsaDecrypt(ciphertext, privRsa):
 	rsaKey = 0;
 	plaintext = 0;
 
-	#get RSA key from file
-	with open(privRsaFileName,'rb') as f:
-		rsaKey = RSA.importKey(f.read());
+	#get RSA key
+	rsaKey = RSA.importKey(privRsa);
 
 	#generate plaintext
-	with open(ciphertextFileName,'rb') as f:
-		plaintext = rsaKey.decrypt(f.read());
+	plaintext = rsaKey.decrypt(ciphertext);
 
 	return plaintext;
 
