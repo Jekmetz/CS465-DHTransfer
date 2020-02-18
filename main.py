@@ -1,3 +1,8 @@
+#Jay Kmetz
+#800249366
+#Programming Assignment 1
+#02/17/2020
+
 #Imports
 import constant as CONST
 import os
