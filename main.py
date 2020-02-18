@@ -227,6 +227,7 @@ def clientDataTransfer(cdhPrivKey, serverID, serverPubKey):
 	#we know the data was not tampered with
 	print("Data:\n" + fdata);
 	logln('Client:\nDATA:\n\n{}\n'.format(fdata));
+	return True;
 
 
 #Encrypt given data with a given RSA Public Key text
